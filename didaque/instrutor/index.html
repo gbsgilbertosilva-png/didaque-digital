@@ -54,12 +54,14 @@ a.link{color:var(--teal);cursor:pointer;text-decoration:underline;background:non
 <script type="module">
 import { auth, db } from "../comum/fb.js";
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
-import { doc, getDoc, setDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 
 const $ = s => document.querySelector(s), main = $("#main");
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const TITULOS = ["A Bíblia","Criação e origem do mal","O plano da salvação","A volta de Jesus","A morte e a Nova Terra","Santuário e juízo","A lei de Deus e o sábado","Princípios de saúde","O dom de profecia","Dízimo e ofertas","A igreja remanescente","Vida cristã e o Espírito Santo","Batismo e missão"];
-let user = null, unsubClasses = null, unsubAlunos = null, aberto = {}, alunos = [], classeAtual = null;
+// Número do administrador para o botão de WhatsApp (só dígitos, com 55 + DDD). Deixe "" para esconder o botão.
+const ADMIN_WHATSAPP = "";
+let user = null, unsubClasses = null, unsubAlunos = null, unsubSol = null, ehAdmin = false, aberto = {}, alunos = [], classeAtual = null;
 
 /* ===== Dados dos estudos (lidos direto da página de cada estudo) ===== */
 const cache = {};
@@ -105,7 +107,7 @@ function novoCodigo() {
   for (let i = 0; i < 6; i++) c += A[Math.floor(Math.random() * A.length)];
   return c;
 }
-function pararTudo() { if (unsubClasses) unsubClasses(); if (unsubAlunos) unsubAlunos(); unsubClasses = unsubAlunos = null; }
+function pararTudo() { if (unsubClasses) unsubClasses(); if (unsubAlunos) unsubAlunos(); if (unsubSol) unsubSol(); unsubClasses = unsubAlunos = unsubSol = null; }
 
 /* ===== Login ===== */
 $("#sair").onclick = async () => { pararTudo(); await signOut(auth); };
@@ -116,11 +118,16 @@ onAuthStateChanged(auth, async u => {
   $("#sair").style.display = u ? "" : "none";
   $("#who").textContent = u ? (u.displayName || u.email) : "Didaquê Digital";
   if (!u) return telaLogin();
+  entrarPainel();
+});
+
+async function entrarPainel() {
   try {
-    const d = await getDoc(doc(db, "instrutores", u.uid));
+    const d = await getDoc(doc(db, "instrutores", user.uid));
+    ehAdmin = d.exists() && d.data().admin === true;
     if (d.exists()) telaClasses(); else telaConvite();
   } catch (e) { console.error(e); main.innerHTML = '<div class="card">Não foi possível carregar.<div class="mut">Detalhe técnico: ' + esc(e.code || e.message) + '</div></div>'; }
-});
+}
 
 function telaLogin() {
   main.innerHTML = '<div class="card"><p>Entre com a sua conta Google para criar classes e acompanhar os alunos.</p><button class="gbtn" id="g" type="button"><span class="gl"><svg width="24" height="24" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span><span class="gt">Entrar com o Google</span></button><div id="m" class="msg"></div>' +
@@ -131,26 +138,41 @@ function telaLogin() {
   };
 }
 
-function telaConvite() {
-  main.innerHTML = '<div class="card"><p>Primeiro acesso. Digite o <b>código de convite de instrutor</b> que você recebeu.</p><div class="row"><input id="cv" placeholder="Código de convite" autocomplete="off"><button class="btn" id="ok">Continuar</button></div><div id="m" class="msg"></div></div>';
+async function telaConvite() {
+  let sol = null;
+  try { const x = await getDoc(doc(db, "solicitacoes", user.uid)); if (x.exists()) sol = x.data(); } catch (e) {}
+  const wa = ADMIN_WHATSAPP ? ' <a class="btn sec" style="display:inline-block;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/' + ADMIN_WHATSAPP + '?text=' + encodeURIComponent("Olá! Pedi acesso de instrutor no Didaquê Digital com o e-mail " + (user.email || "") + ". Pode aprovar?") + '">Avisar o administrador pelo WhatsApp</a>' : '';
+  main.innerHTML = '<div class="card"><p style="margin-top:0"><b>Primeiro acesso.</b> Se você recebeu um código de convite de instrutor, digite aqui:</p><div class="row"><input id="cv" placeholder="Código de convite" autocomplete="off"><button class="btn" id="ok">Continuar</button></div><div id="m" class="msg"></div></div>' +
+    '<div class="card"><p style="margin-top:0"><b>Não tem o código?</b> Peça acesso. O administrador vai analisar o seu pedido.</p>' +
+    (sol && sol.status === "pendente"
+      ? '<p class="mut">✔ Pedido enviado. Assim que for aprovado, toque em "Verificar de novo".</p><button class="btn sec" id="ver">Verificar de novo</button>'
+      : '<button class="btn" id="pedir">Pedir acesso</button>') + wa + '<div id="m2" class="msg"></div></div>';
   $("#ok").onclick = async () => {
     const convite = $("#cv").value.trim();
     if (!convite) return;
     try {
       await setDoc(doc(db, "instrutores", user.uid), { nome: user.displayName || "", email: user.email || "", convite: convite, criadoEm: serverTimestamp() });
-      telaClasses();
+      entrarPainel();
     } catch (e) { console.error(e); $("#m").textContent = "Código de convite incorreto. (" + (e.code || e.message) + ")"; }
+  };
+  if ($("#ver")) $("#ver").onclick = entrarPainel;
+  if ($("#pedir")) $("#pedir").onclick = async () => {
+    try {
+      await setDoc(doc(db, "solicitacoes", user.uid), { nome: user.displayName || "", email: user.email || "", status: "pendente", em: serverTimestamp() });
+      telaConvite();
+    } catch (e) { console.error(e); $("#m2").textContent = "Não foi possível enviar o pedido. (" + (e.code || e.message) + ")"; }
   };
 }
 
 /* ===== Lista de classes ===== */
 function telaClasses() {
   pararTudo(); classeAtual = null;
-  main.innerHTML = '<h2>Minhas classes</h2><div id="lista"></div>' +
+  main.innerHTML = '<div id="adm"></div><h2>Minhas classes</h2><div id="lista"></div>' +
     '<div class="card"><div class="row"><input id="nc" placeholder="Nome da nova classe (ex.: Turma de sábado)" style="flex:1;min-width:200px"><button class="btn" id="criar">Criar classe</button></div><div id="m" class="msg"></div></div>' +
     '<h2>Guia do instrutor</h2><div class="card"><p class="mut" style="margin-top:0">Veja todas as perguntas de um estudo com as respostas esperadas.</p><button class="btn sec" id="guia">Abrir o guia</button></div>';
   $("#guia").onclick = telaGuia;
   $("#criar").onclick = criarClasse;
+  if (ehAdmin) pedidosAdmin();
   unsubClasses = onSnapshot(query(collection(db, "classes"), where("instrutorUid", "==", user.uid)), snap => {
     const L = $("#lista"); if (!L) return;
     const cs = []; snap.forEach(d => cs.push(d.data()));
@@ -158,6 +180,24 @@ function telaClasses() {
     L.innerHTML = cs.length ? cs.map(c => '<div class="card"><div class="row" style="justify-content:space-between"><div><b>' + esc(c.nome) + '</b><div class="mut">Código: <b>' + esc(c.codigo) + '</b></div></div><button class="btn sm" data-c="' + esc(c.codigo) + '" data-n="' + esc(c.nome) + '">Abrir</button></div></div>').join("")
       : '<div class="card mut">Você ainda não tem classes. Crie a primeira abaixo.</div>';
     L.querySelectorAll("button[data-c]").forEach(b => b.onclick = () => telaClasse(b.dataset.c, b.dataset.n));
+  }, e => console.error(e));
+}
+function pedidosAdmin() {
+  unsubSol = onSnapshot(collection(db, "solicitacoes"), snap => {
+    const box = $("#adm"); if (!box) return;
+    const L = []; snap.forEach(d => { const v = d.data(); if (v.status === "pendente") L.push(Object.assign({ _id: d.id }, v)); });
+    if (!L.length) { box.innerHTML = ""; return; }
+    box.innerHTML = '<h2>Pedidos de acesso (' + L.length + ')</h2>' + L.map(v => '<div class="card"><b>' + esc(v.nome) + '</b><div class="mut">' + esc(v.email) + '</div><div class="row" style="margin-top:8px"><button class="btn sm" data-ap="' + esc(v._id) + '">Aprovar</button><button class="btn sec sm" data-re="' + esc(v._id) + '">Recusar</button></div></div>').join("");
+    box.querySelectorAll("button[data-ap]").forEach(b => b.onclick = async () => {
+      const v = L.find(x => x._id === b.dataset.ap); b.disabled = true;
+      try {
+        await setDoc(doc(db, "instrutores", v._id), { nome: v.nome || "", email: v.email || "", aprovadoPor: user.uid, criadoEm: serverTimestamp() });
+        await deleteDoc(doc(db, "solicitacoes", v._id));
+      } catch (e) { console.error(e); alert("Não foi possível aprovar. (" + (e.code || e.message) + ")"); b.disabled = false; }
+    });
+    box.querySelectorAll("button[data-re]").forEach(b => b.onclick = async () => {
+      try { await deleteDoc(doc(db, "solicitacoes", b.dataset.re)); } catch (e) { console.error(e); }
+    });
   }, e => console.error(e));
 }
 async function criarClasse() {
