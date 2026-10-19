@@ -49,10 +49,10 @@ function tela() {
     $("#trocar").onclick = () => { localStorage.removeItem("didaque_aluno"); tela(); };
     return;
   }
-  box.innerHTML = '<label for="nome">Seu primeiro nome</label><input id="nome" autocomplete="given-name" maxlength="30">' +
+  box.innerHTML = '<label for="nome">Seu nome</label><input id="nome" autocomplete="given-name" maxlength="30">' +
     '<label for="cod">Código da classe</label><input id="cod" class="cod" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false">' +
     '<div id="m" class="msg"></div><button class="btn" id="ok">Entrar</button>' +
-    '<p class="mut" style="margin-bottom:0">Só pedimos o seu primeiro nome, para o instrutor acompanhar o seu estudo.</p>';
+    '<p class="mut" style="margin-bottom:0">Só pedimos o seu nome para o instrutor acompanhar o seu estudo.</p>';
   $("#ok").onclick = () => entrar();
   $("#cod").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
 }
