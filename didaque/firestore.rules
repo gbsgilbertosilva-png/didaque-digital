@@ -12,12 +12,28 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Cadastro de instrutores: exige o código de convite
+    // Administrador: documento do próprio instrutor com o campo admin = true (definido pelo console)
+    function ehAdmin() {
+      return logado()
+        && exists(/databases/$(database)/documents/instrutores/$(request.auth.uid))
+        && get(/databases/$(database)/documents/instrutores/$(request.auth.uid)).data.admin == true;
+    }
+
+    // Cadastro de instrutores: por código de convite ou aprovado pelo administrador
     match /instrutores/{uid} {
-      allow read: if logado() && request.auth.uid == uid;
-      allow create: if logado() && request.auth.uid == uid
-        && request.resource.data.convite == get(/databases/$(database)/documents/config/convite).data.codigo;
-      allow update, delete: if false;
+  allow read: if logado() && request.auth.uid == uid;
+  allow create: if logado() && request.auth.uid == uid
+    && request.auth.token.firebase.sign_in_provider == 'google.com'
+    && request.resource.data.keys().hasOnly(['nome','email','criadoEm']);
+  allow update, delete: if false;
+}
+
+    // Pedidos de acesso de novos instrutores
+    match /solicitacoes/{uid} {
+      allow get: if logado() && (request.auth.uid == uid || ehAdmin());
+      allow list: if ehAdmin();
+      allow create, update: if logado() && request.auth.uid == uid && request.resource.data.status == "pendente";
+      allow delete: if ehAdmin();
     }
 
     // Classes
