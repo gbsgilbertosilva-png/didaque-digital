@@ -24,7 +24,11 @@ service cloud.firestore {
   allow read: if logado() && request.auth.uid == uid;
   allow create: if logado() && request.auth.uid == uid
     && request.auth.token.firebase.sign_in_provider == 'google.com'
-    && request.resource.data.keys().hasOnly(['nome','email','criadoEm']);
+    && (
+      request.resource.data.keys().hasOnly(['nome','email','criadoEm'])
+      || (request.resource.data.keys().hasOnly(['nome','email','convite','criadoEm'])
+          && request.resource.data.convite == get(/databases/$(database)/documents/config/convite).data.codigo)
+    );
   allow update, delete: if false;
 }
 
